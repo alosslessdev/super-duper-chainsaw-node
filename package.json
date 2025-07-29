@@ -1,0 +1,25 @@
+{
+  "name": "mi-backend",
+  "version": "1.0.0",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "description": "",
+  "dependencies": {
+    "axios": "^1.10.0",
+    "cors": "^2.8.5",
+    "dotenv": "^17.2.0",
+    "express": "^5.1.0",
+    "express-session": "^1.18.1",
+    "jsonrepair": "^3.13.0",
+    "mysql": "^2.18.1",
+    "mysql2": "^3.14.2",
+    "pbkdf2-password": "^1.2.1",
+    "readline-sync": "^1.4.10",
+    "swagger-ui-express": "^5.0.1"
+  }
+}

@@ -1,0 +1,761 @@
+{
+  "openapi": "3.0.0",
+  "info": {
+    "title": "Task Management API",
+    "version": "1.0.0",
+    "description": "API for managing tasks and user authentication."
+  },
+  "servers": [
+    {
+      "url": "http://0000243.xyz:8080",
+      "description": "Local server"
+    }
+  ],
+  "components": {
+    "securitySchemes": {
+      "cookieAuth": {
+        "type": "apiKey",
+        "in": "cookie",
+        "name": "connect.sid"
+      }
+    },
+    "schemas": {
+      "User": {
+        "type": "object",
+        "properties": {
+          "email": {
+            "type": "string",
+            "format": "email",
+            "description": "User's email address"
+          },
+          "password": {
+            "type": "string",
+            "format": "password",
+            "description": "User's password"
+          }
+        },
+        "required": [
+          "email",
+          "password"
+        ]
+      },
+      "Task": {
+        "type": "object",
+        "properties": {
+          "pk": {
+            "type": "integer",
+            "description": "Primary key of the task"
+          },
+          "fecha_inicio": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Start date and time of the task"
+          },
+          "fecha_fin": {
+            "type": "string",
+            "format": "date-time",
+            "description": "End date and time of the task"
+          },
+          "descripcion": {
+            "type": "string",
+            "description": "Description of the task"
+          },
+          "prioridad": {
+            "type": "string",
+            "description": "Priority of the task"
+          },
+          "titulo": {
+            "type": "string",
+            "description": "Title of the task"
+          },
+          "usuario": {
+            "type": "integer",
+            "description": "ID of the user associated with the task"
+          },
+          "tiempo_estimado": {
+            "type": "string",
+            "description": "Estimated time for the task (from AI)"
+          }
+        },
+        "required": [
+          "fecha_inicio",
+          "fecha_fin",
+          "descripcion",
+          "prioridad",
+          "titulo",
+          "usuario"
+        ]
+      },
+      "Error": {
+        "type": "object",
+        "properties": {
+          "error": {
+            "type": "string",
+            "description": "Error message"
+          }
+        }
+      },
+      "AIAssistedTaskRequest": {
+        "type": "object",
+        "properties": {
+          "pdf_url": {
+            "type": "string",
+            "format": "url",
+            "description": "Optional URL to a PDF document for AI processing."
+          },
+          "question": {
+            "type": "string",
+            "description": "The question or prompt for the AI to generate tasks."
+          }
+        },
+        "required": [
+          "question"
+        ]
+      },
+      "AIAssistedTaskResponse": {
+        "type": "object",
+        "properties": {
+          "tareasProcesadas": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "tarea": {
+                  "type": "string",
+                  "description": "Description of the processed task."
+                },
+                "tiempoEstimado": {
+                  "type": "string",
+                  "description": "Estimated time for the processed task."
+                },
+                "insertId": {
+                  "type": "integer",
+                  "description": "ID of the newly inserted task in the database."
+                },
+                "error": {
+                  "type": "string",
+                  "description": "Error message if task insertion failed."
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "tags": [
+    {
+      "name": "Authentication",
+      "description": "User authentication operations"
+    },
+    {
+      "name": "Tasks",
+      "description": "Operations related to managing tasks"
+    },
+    {
+      "name": "AI Integration",
+      "description": "Operations involving AI for task generation"
+    }
+  ],
+  "paths": {
+    "/usuarios": {
+      "post": {
+        "tags": [
+          "Authentication"
+        ],
+        "summary": "Create a new user",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/User"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "User created successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "pk": {
+                      "type": "integer"
+                    },
+                    "email": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request - Email and password are required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/login": {
+      "post": {
+        "tags": [
+          "Authentication"
+        ],
+        "summary": "Log in a user",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/User"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Login successful",
+            "headers": {
+              "Set-Cookie": {
+                "schema": {
+                  "type": "string",
+                  "example": "auth_token=s%3Ayour_session_id.some_signature; Path=/; HttpOnly; SameSite=Strict"
+                },
+                "description": "Session cookie containing the authentication token."
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "mensaje": {
+                      "type": "string"
+                    },
+                    "usuario": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "integer"
+                        },
+                        "email": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request - Email and password required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized - User not found or incorrect password",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/logout": {
+      "post": {
+        "tags": [
+          "Authentication"
+        ],
+        "summary": "Log out a user",
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Session closed",
+            "headers": {
+              "Set-Cookie": {
+                "schema": {
+                  "type": "string",
+                  "example": "auth_token=; Path=/; Expires=Thu, 01 Jan 1970 00:00:00 GMT"
+                },
+                "description": "Clears the authentication token cookie."
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "mensaje": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized - User not logged in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/tareas/de/{usuario}": {
+      "get": {
+        "tags": [
+          "Tasks"
+        ],
+        "summary": "Get all tasks for a specific user",
+        "parameters": [
+          {
+            "name": "usuario",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "ID of the user"
+          }
+        ],
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Task"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized - User not logged in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/tareas/por/{id}": {
+      "get": {
+        "tags": [
+          "Tasks"
+        ],
+        "summary": "Get a task by ID",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "ID of the task to retrieve"
+          }
+        ],
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Task"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized - User not logged in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Task not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "Tasks"
+        ],
+        "summary": "Update an existing task",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "ID of the task to update"
+          }
+        ],
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Task"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Task updated successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "mensaje": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized - User not logged in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Task not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Tasks"
+        ],
+        "summary": "Delete a task by ID",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "ID of the task to delete"
+          }
+        ],
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Task deleted successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "mensaje": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized - User not logged in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Task not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/tareas": {
+      "post": {
+        "tags": [
+          "Tasks"
+        ],
+        "summary": "Create a new task",
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Task"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Task created successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "pk": {
+                      "type": "integer"
+                    },
+                    "fecha_inicio": {
+                      "type": "string"
+                    },
+                    "fecha_fin": {
+                      "type": "string"
+                    },
+                    "descripcion": {
+                      "type": "string"
+                    },
+                    "prioridad": {
+                      "type": "string"
+                    },
+                    "titulo": {
+                      "type": "string"
+                    },
+                    "usuario": {
+                      "type": "integer"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized - User not logged in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/tareas/ia/": {
+      "post": {
+        "tags": [
+          "AI Integration"
+        ],
+        "summary": "Generate and save tasks using AI",
+        "description": "Sends a question and/or PDF URL to an external AI service to generate tasks, then saves them to the database.",
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AIAssistedTaskRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Tasks processed and saved successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AIAssistedTaskResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized - User not logged in (if requireLogin were applied here)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error or AI processing error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
