@@ -1,13 +1,14 @@
+// Load environment variables from .env file
+require('dotenv').config();
 
 const mysql = require('mysql2');
-const readlineSync = require('readline-sync');
 
-// Prompt for DB connection parameters
-const host = readlineSync.question('Host de la base de datos (default: localhost): ', { defaultInput: 'localhost' }) || 'localhost';
-const user = readlineSync.question('Usuario de la base de datos (default: root): ', { defaultInput: 'root' }) || 'root';
-const password = readlineSync.question('Contraseña de la base de datos (puede estar vacía): ', { hideEchoBack: true }) || '';
-const database = readlineSync.question('Nombre de la base de datos (default: gestion_tareas): ', { defaultInput: 'gestion_tareas' }) || 'gestion_tareas';
-const port = readlineSync.question('Puerto (default: 3306): ', { defaultInput: '3306' }) || '3306';
+// Get database connection parameters from environment variables
+const host = process.env.DB_HOST || 'localhost';
+const user = process.env.DB_USER || 'root';
+const password = process.env.DB_PASSWORD || '';
+const database = process.env.DB_NAME || 'gestion_tareas';
+const port = process.env.DB_PORT || '3306';
 
 const conexion = mysql.createConnection({
   host,

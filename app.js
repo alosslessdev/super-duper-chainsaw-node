@@ -1,69 +1,58 @@
-
-//require('dotenv').config();
+// Load environment variables from .env file
+import 'dotenv/config'; 
 import axios from 'axios';
 import express from 'express';
 import session from 'express-session';
 import { jsonrepair } from 'jsonrepair';
 import hash from 'pbkdf2-password';
-import readlineSync from 'readline-sync';
-import swaggerUi from 'swagger-ui-express';
 import util from 'util';
 import conexion from './db.js'; // Importa la conexión
+import swaggerUi from 'swagger-ui-express';
 import swaggerDocument from './swagger.json' with { type: "json" };
 import https from 'https';
 import fs  from 'fs';
-// Prompt for API key at startup
-const apiKey = readlineSync.question('Ingrese el API key para la IA: ', { hideEchoBack: true }) || '';
-const secretKeyIdStore = readlineSync.question('Ingrese el Key ID para AWS S3: ', { hideEchoBack: true }) || '';
-const secretKeyStore = readlineSync.question('Ingrese el secret key para AWS S3: ', { hideEchoBack: true }) || '';
-const app = express(); //declaracion de aplicacion
-//const hostAndPort = 3000; //puerto de red
+import cors from 'cors'; // Import CORS
 
-const isProd = process.argv.includes('--prod');
+// Get API keys and secrets from environment variables
+const apiKey = process.env.IA_API_KEY || '';
+const secretKeyIdStore = process.env.AWS_S3_KEY_ID || '';
+const secretKeyStore = process.env.AWS_S3_SECRET_KEY || '';
+
+const app = express(); // Declaración de aplicación
+
+// Determine host and port based on NODE_ENV
+const isProd = process.env.NODE_ENV === 'production';
 const hostAndPort = isProd ? '0.0.0.0:8080' : 'localhost:3000';
+const corsOrigin = isProd ? process.env.CORS_ORIGIN_PROD : 'http://localhost:3000'; // Define CORS origin based on env
 
-
-//maybe cors can be removed
-import cors from 'cors';
-app.use(cors({
-  origin: 'http://localhost:3000', // or wherever Swagger UI is served
+// Configure CORS
+/* app.use(cors({
+  origin: corsOrigin, // Use the determined CORS origin
   credentials: true
-}));
+})); */
 
-
-
-
-
-//const express = require('express');
-
-app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerDocument)); //usar swagger para documentaciop
-
-app.use(express.json()); //???
+app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerDocument)); // Usar swagger para documentación
+app.use(express.json()); // Middleware para parsear JSON en el cuerpo de las solicitudes
 
 const hasher = hash();
 
-//middleware de sesión? O es para guardar contraseñas?
-app.use(session({ //de express-session, guarda una id de sesion en el servidor, se usa para cookies, esto es para opciones de la sesion y hay un objeto json con opciones
-  secret: 'clave-super-secreta', //secreto usaod para formar la cookie de id de sesion
-  resave: false, // se usa con almacenamiento de sesionse dependiendo de si usa el metodo touch, no se usa. 
-  saveUninitialized: false // no guardar sesiones que no se han inicializado, para sesiones de login, pedir permiso de cookies, reduce espacio de almacenamiento
+// Configuración de la sesión
+app.use(session({
+  secret: process.env.SESSION_SECRET || 'clave-super-secreta-default', // Usar secreto de env o un default
+  resave: false,
+  saveUninitialized: false
 }));
 
-// 🔐 Middleware de protección, fucnion para login requiere session arriba
-function requireLogin(req, res, next) { // req es request, res es response, next se pone para seguir al siguiente middleware, son de express, porque se llama next? 
-                                        // Que llama requirelogin? Nada
-  if (!req.session.user) {  //si el request no tiene session de user, que establece req? Express session.
-    return res.status(401).json({ error: 'No autorizado. Inicia sesión primero.' }); //retirnar no autorizado en json
+// 🔐 Middleware de protección para rutas que requieren autenticación
+function requireLogin(req, res, next) {
+  if (!req.session.user) {
+    return res.status(401).json({ error: 'No autorizado. Inicia sesión primero.' });
   }
-  next(); //seguir al siguente middleware
+  next(); // Continuar al siguiente middleware
 }
 
-
-
-// Promisificar la query a la conexion de base de datos para usar async/await
+// Promisificar la query a la conexión de base de datos para usar async/await
 const query = util.promisify(conexion.query).bind(conexion);
-
-
 
 // Crear usuario / agregado lo de hash
 app.post('/usuarios', (req, res) => {
@@ -73,10 +62,7 @@ app.post('/usuarios', (req, res) => {
     return res.status(400).json({ error: 'Email y contraseña son requeridos' });
   }
 
-  hasher({ password }, (err, pass, salt, hashVal) => {  //hash de libreria externa, this syntax is 
-                                                      // a lambda func and password needs to be an object
-                                                      // err, pass, salt, hashval are just for library
-                                                      // lambda used because of library
+  hasher({ password }, (err, pass, salt, hashVal) => {
     if (err) return res.status(500).json({ error: 'Error al hashear la contraseña' });
 
     const sql = 'INSERT INTO usuario (email, password, salt) VALUES (?, ?, ?)';
@@ -94,12 +80,10 @@ app.post('/login', async (req, res) => {
 
   if (!email || !password) {
       console.log("no pass done");
-
     return res.status(400).json({ error: 'Email y contraseña requeridos' });
   }
   try {
       console.log("enter user search done");
-
     const resultados = await query('SELECT * FROM usuario WHERE email = ?', [email]);
       console.log("user search done");
 
@@ -112,7 +96,6 @@ app.post('/login', async (req, res) => {
 
     hasher({ password, salt: user.salt }, (err, pass, salt, hashVal) => {
         console.log("ahshing");
-
       if (err) return res.status(500).json({ error: 'Error al verificar contraseña' });
 
       if (hashVal === user.password) {
@@ -134,7 +117,7 @@ app.post('/login', async (req, res) => {
   }
 });
 
-// Require cookie for logout
+// Ruta para cerrar sesión
 app.post('/logout', requireLogin, (req, res) => {
   req.session.destroy(() => {
     res.clearCookie('connect.sid');
@@ -142,13 +125,12 @@ app.post('/logout', requireLogin, (req, res) => {
   });
 });
 
-
-
 // RUTAS PARA TAREAS
 
+// Obtener todas las tareas de un usuario
 app.get('/tareas/de/:usuario', requireLogin, async (req, res) => {
   const usuario = req.params.usuario;
-  // Only allow access to own data
+  // Solo permitir acceso a los propios datos
   if (!req.session.user || req.session.user.id != usuario) {
     return res.status(403).json({ error: 'No autorizado. Solo puedes acceder a tus propias tareas.' });
   }
@@ -161,13 +143,12 @@ app.get('/tareas/de/:usuario', requireLogin, async (req, res) => {
 });
 
 // Obtener tarea por ID
-
 app.get('/tareas/por/:id', requireLogin, async (req, res) => {
   const id = req.params.id;
   try {
     const resultados = await query('SELECT * FROM tarea WHERE pk = ?', [id]);
     if (resultados.length === 0) return res.status(404).json({ error: 'Tarea no encontrada' });
-    // Only allow access to own data
+    // Solo permitir acceso a los propios datos
     if (!req.session.user || resultados[0].usuario != req.session.user.id) {
       return res.status(403).json({ error: 'No autorizado. Solo puedes acceder a tus propias tareas.' });
     }
@@ -177,9 +158,10 @@ app.get('/tareas/por/:id', requireLogin, async (req, res) => {
   }
 });
 
+// Crear una nueva tarea
 app.post('/tareas', requireLogin, async (req, res) => {
   const { fecha_inicio, fecha_fin, descripcion, prioridad, titulo } = req.body;
-  // Always assign to logged-in user
+  // Asignar siempre al usuario logueado
   const usuario = req.session.user?.id;
   const sql = `INSERT INTO tarea (fecha_inicio, fecha_fin, descripcion, prioridad, titulo, usuario)
                VALUES (?, ?, ?, ?, ?, ?)`;
@@ -194,15 +176,15 @@ app.post('/tareas', requireLogin, async (req, res) => {
 // Actualizar tarea
 app.put('/tareas/:id', requireLogin, async (req, res) => {
   const id = req.params.id;
-  const { fecha_inicio, fecha_fin, descripcion, prioridad, titulo, usuario } = req.body;
-    // Only allow update if task belongs to user
+  const { fecha_inicio, fecha_fin, descripcion, prioridad, titulo } = req.body; // Eliminar 'usuario' del req.body
+
   try {
       const resultados = await query('SELECT * FROM tarea WHERE pk = ?', [id]);
       if (resultados.length === 0) return res.status(404).json({ error: 'Tarea no encontrada' });
       if (!req.session.user || resultados[0].usuario != req.session.user.id) {
         return res.status(403).json({ error: 'No autorizado. Solo puedes modificar tus propias tareas.' });
       }
-      const usuario = req.session.user.id;
+      const usuario = req.session.user.id; // Obtener el ID del usuario de la sesión
       const sql = `UPDATE tarea SET fecha_inicio = ?, fecha_fin = ?, descripcion = ?, prioridad = ?, titulo = ?, usuario = ?
                WHERE pk = ?`;
   
@@ -217,7 +199,7 @@ app.put('/tareas/:id', requireLogin, async (req, res) => {
 // Eliminar tarea
 app.delete('/tareas/:id', requireLogin, async (req, res) => {
   const id = req.params.id;
-  // Only allow delete if task belongs to user
+  // Solo permitir eliminar si la tarea pertenece al usuario
   try {
     const resultados = await query('SELECT * FROM tarea WHERE pk = ?', [id]);
     if (resultados.length === 0) return res.status(404).json({ error: 'Tarea no encontrada' });
@@ -350,12 +332,6 @@ app.post('/tareas/ia/', requireLogin, async (req, res) => {
   }
 });
 
-// hacer que guarde los datos temporalmente antes de modificar la base de datos
-
-
-
 app.listen(hostAndPort, () => {
   console.log(`Servidor corriendo en http://${hostAndPort}`);
 });
-
-
