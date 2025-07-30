@@ -6,41 +6,44 @@ import session from 'express-session';
 import { jsonrepair } from 'jsonrepair';
 import hash from 'pbkdf2-password';
 import util from 'util';
-import conexion from './db.js'; // Importa la conexión
+import conexion from './db.js'; // Importa la conexión a la base de datos
 import swaggerUi from 'swagger-ui-express';
 import swaggerDocument from './swagger.json' with { type: "json" };
-import https from 'https';
-import fs  from 'fs';
-import cors from 'cors'; // Import CORS
+import https from 'https'; // Aunque importado, no se usa para HTTP estándar
+import fs  from 'fs'; // Aunque importado, no se usa para HTTP estándar
+import cors from 'cors'; // Import CORS middleware
 
-// Get API keys and secrets from environment variables
+// Obtener claves API y secretos de las variables de entorno
 const apiKey = process.env.IA_API_KEY || '';
 const secretKeyIdStore = process.env.AWS_S3_KEY_ID || '';
 const secretKeyStore = process.env.AWS_S3_SECRET_KEY || '';
 
-const app = express(); // Declaración de aplicación
+const app = express(); // Declaración de la aplicación Express
 
-// Determine host and port based on NODE_ENV
+// Determinar host y puerto basándose en NODE_ENV
 const isProd = process.env.NODE_ENV === 'production';
-const hostAndPort = isProd ? '0.0.0.0:8080' : 'localhost:3000';
-const corsOrigin = isProd ? process.env.CORS_ORIGIN_PROD : 'http://localhost:3000'; // Define CORS origin based on env
+const PORT = process.env.PORT || (isProd ? 8080 : 3000); // Puerto para escuchar
+const HOST = isProd ? '0.0.0.0' : 'localhost'; // Host para escuchar (0.0.0.0 para producción escucha en todas las interfaces)
+const corsOrigin = isProd ? process.env.CORS_ORIGIN_PROD : 'http://localhost:3000'; // Define el origen de CORS basado en el entorno
 
-// Configure CORS
-/* app.use(cors({
-  origin: corsOrigin, // Use the determined CORS origin
-  credentials: true
-})); */
+// Configurar CORS
+app.use(cors({
+  origin: corsOrigin, // Usar el origen CORS determinado
+  credentials: true // Permitir el envío de cookies y cabeceras de autorización
+}));
 
-app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerDocument)); // Usar swagger para documentación
-app.use(express.json()); // Middleware para parsear JSON en el cuerpo de las solicitudes
+// Usar swagger para documentación de la API
+app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerDocument)); 
+// Middleware para parsear JSON en el cuerpo de las solicitudes
+app.use(express.json()); 
 
-const hasher = hash();
+const hasher = hash(); // Inicializar el hasher de contraseñas
 
 // Configuración de la sesión
 app.use(session({
   secret: process.env.SESSION_SECRET || 'clave-super-secreta-default', // Usar secreto de env o un default
-  resave: false,
-  saveUninitialized: false
+  resave: false, // No guardar la sesión si no ha cambiado
+  saveUninitialized: false // No guardar sesiones nuevas que no han sido modificadas
 }));
 
 // 🔐 Middleware de protección para rutas que requieren autenticación
@@ -63,11 +66,17 @@ app.post('/usuarios', (req, res) => {
   }
 
   hasher({ password }, (err, pass, salt, hashVal) => {
-    if (err) return res.status(500).json({ error: 'Error al hashear la contraseña' });
+    if (err) {
+      console.error('Error al hashear la contraseña:', err);
+      return res.status(500).json({ error: 'Error al hashear la contraseña' });
+    }
 
     const sql = 'INSERT INTO usuario (email, password, salt) VALUES (?, ?, ?)';
     conexion.query(sql, [email, hashVal, salt], (error, resultados) => {
-      if (error) return res.status(500).json({ error: error.message });
+      if (error) {
+        console.error('Error al insertar usuario en la BD:', error);
+        return res.status(500).json({ error: error.message });
+      }
       res.status(201).json({ pk: resultados.insertId, email });
     });
   });
@@ -76,27 +85,31 @@ app.post('/usuarios', (req, res) => {
 // Ruta para iniciar sesión
 app.post('/login', async (req, res) => {
   const { email, password } = req.body;
-  console.log("req.body done");
+  console.log("Intentando iniciar sesión para:", email);
 
   if (!email || !password) {
-      console.log("no pass done");
+    console.log("Email o contraseña no proporcionados.");
     return res.status(400).json({ error: 'Email y contraseña requeridos' });
   }
   try {
-      console.log("enter user search done");
+    console.log("Buscando usuario en la base de datos...");
     const resultados = await query('SELECT * FROM usuario WHERE email = ?', [email]);
-      console.log("user search done");
+    console.log("Búsqueda de usuario completada.");
 
     if (resultados.length === 0) {
+      console.log("Usuario no encontrado para el email:", email);
       return res.status(401).json({ error: 'Usuario no encontrado' });
     }
 
     const user = resultados[0];
-  console.log("entering hash");
+    console.log("Verificando contraseña...");
 
     hasher({ password, salt: user.salt }, (err, pass, salt, hashVal) => {
-        console.log("ahshing");
-      if (err) return res.status(500).json({ error: 'Error al verificar contraseña' });
+      console.log("Hash de contraseña completado.");
+      if (err) {
+        console.error('Error al verificar contraseña:', err);
+        return res.status(500).json({ error: 'Error al verificar contraseña' });
+      }
 
       if (hashVal === user.password) {
         req.session.user = {
@@ -104,15 +117,20 @@ app.post('/login', async (req, res) => {
           email: user.email
         };
         req.session.save(function (err) {
-          if (err) return res.status(500).json({ error: 'Error al guardar la sesión' });
-          // Only send one response after session is saved
+          if (err) {
+            console.error('Error al guardar la sesión:', err);
+            return res.status(500).json({ error: 'Error al guardar la sesión' });
+          }
+          // Solo enviar una respuesta después de que la sesión se haya guardado
           res.json({ mensaje: 'Inicio de sesión exitoso', usuario: req.session.user, secretKeyId: secretKeyIdStore, secretKey: secretKeyStore });
         });
       } else {
+        console.log("Contraseña incorrecta para el usuario:", email);
         res.status(401).json({ error: 'Contraseña incorrecta' });
       }
     });
   } catch (error) {
+    console.error('Error en la ruta /login:', error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -120,24 +138,25 @@ app.post('/login', async (req, res) => {
 // Ruta para cerrar sesión
 app.post('/logout', requireLogin, (req, res) => {
   req.session.destroy(() => {
-    res.clearCookie('connect.sid');
+    res.clearCookie('connect.sid'); // Limpiar la cookie de sesión
     res.json({ mensaje: 'Sesión cerrada' });
   });
 });
 
-// RUTAS PARA TAREAS
+// --- RUTAS PARA TAREAS ---
 
 // Obtener todas las tareas de un usuario
 app.get('/tareas/de/:usuario', requireLogin, async (req, res) => {
-  const usuario = req.params.usuario;
+  const usuarioId = req.params.usuario;
   // Solo permitir acceso a los propios datos
-  if (!req.session.user || req.session.user.id != usuario) {
+  if (!req.session.user || req.session.user.id != usuarioId) {
     return res.status(403).json({ error: 'No autorizado. Solo puedes acceder a tus propias tareas.' });
   }
   try {
-    const resultados = await query('SELECT * FROM tarea WHERE usuario = ?', [usuario]);
+    const resultados = await query('SELECT * FROM tarea WHERE usuario = ?', [usuarioId]);
     res.json(resultados);
   } catch (error) {
+    console.error('Error al obtener tareas por usuario:', error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -154,6 +173,7 @@ app.get('/tareas/por/:id', requireLogin, async (req, res) => {
     }
     res.json(resultados[0]);
   } catch (error) {
+    console.error('Error al obtener tarea por ID:', error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -163,12 +183,17 @@ app.post('/tareas', requireLogin, async (req, res) => {
   const { fecha_inicio, fecha_fin, descripcion, prioridad, titulo } = req.body;
   // Asignar siempre al usuario logueado
   const usuario = req.session.user?.id;
+/*   if (!usuario) {
+    return res.status(401).json({ error: 'Usuario no autenticado para crear tarea.' });
+  } */
+
   const sql = `INSERT INTO tarea (fecha_inicio, fecha_fin, descripcion, prioridad, titulo, usuario)
                VALUES (?, ?, ?, ?, ?, ?)`;
   try {
     const resultados = await query(sql, [fecha_inicio, fecha_fin, descripcion, prioridad, titulo, usuario]);
     res.status(201).json({ pk: resultados.insertId, fecha_inicio, fecha_fin, descripcion, prioridad, titulo, usuario });
   } catch (error) {
+    console.error('Error al crear nueva tarea:', error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -176,22 +201,24 @@ app.post('/tareas', requireLogin, async (req, res) => {
 // Actualizar tarea
 app.put('/tareas/:id', requireLogin, async (req, res) => {
   const id = req.params.id;
-  const { fecha_inicio, fecha_fin, descripcion, prioridad, titulo } = req.body; // Eliminar 'usuario' del req.body
+  const { fecha_inicio, fecha_fin, descripcion, prioridad, titulo } = req.body; 
 
   try {
-      const resultados = await query('SELECT * FROM tarea WHERE pk = ?', [id]);
-      if (resultados.length === 0) return res.status(404).json({ error: 'Tarea no encontrada' });
-      if (!req.session.user || resultados[0].usuario != req.session.user.id) {
-        return res.status(403).json({ error: 'No autorizado. Solo puedes modificar tus propias tareas.' });
-      }
-      const usuario = req.session.user.id; // Obtener el ID del usuario de la sesión
-      const sql = `UPDATE tarea SET fecha_inicio = ?, fecha_fin = ?, descripcion = ?, prioridad = ?, titulo = ?, usuario = ?
+    const resultados = await query('SELECT * FROM tarea WHERE pk = ?', [id]);
+    if (resultados.length === 0) return res.status(404).json({ error: 'Tarea no encontrada' });
+    if (!req.session.user || resultados[0].usuario != req.session.user.id) {
+      return res.status(403).json({ error: 'No autorizado. Solo puedes modificar tus propias tareas.' });
+    }
+    const usuario = req.session.user.id; // Obtener el ID del usuario de la sesión
+
+    const sql = `UPDATE tarea SET fecha_inicio = ?, fecha_fin = ?, descripcion = ?, prioridad = ?, titulo = ?, usuario = ?
                WHERE pk = ?`;
   
     const updateResult = await query(sql, [fecha_inicio, fecha_fin, descripcion, prioridad, titulo, usuario, id]);
-    if (updateResult.affectedRows === 0) return res.status(404).json({ error: 'Tarea no encontrada' });
+    if (updateResult.affectedRows === 0) return res.status(404).json({ error: 'Tarea no encontrada o no se realizaron cambios' });
     res.json({ mensaje: 'Tarea actualizada' });
   } catch (error) {
+    console.error('Error al actualizar tarea:', error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -210,49 +237,51 @@ app.delete('/tareas/:id', requireLogin, async (req, res) => {
     if (deleteResult.affectedRows === 0) return res.status(404).json({ error: 'Tarea no encontrada' });
     res.json({ mensaje: 'Tarea eliminada' });
   } catch (error) {
+    console.error('Error al eliminar tarea:', error);
     res.status(500).json({ error: error.message });
   }
 });
 
 // RUTA IA CON TAREA POR ID
-// hacer que guarde los datos temporalmente antes de modificar la base de datos
-// ver tambien como se sube el archivo lo mas probable es que sea en s3 y luego aqui se tome el link desde s3 y se pase al rag
 app.post('/tareas/ia/', requireLogin, async (req, res) => {
   try {
     let response, tareasJsonStr;
     let attempt = 0;
     let jsonRepairSuccess = false;
     let lastError;
+    // Intentar hasta 2 veces para obtener y reparar la respuesta JSON de la IA
     while (attempt < 2 && !jsonRepairSuccess) {
       try {
         response = await axios.post(
-          `http://0000243.xyz:8000/secure-data`,
+          `http://0000243.xyz:8000/secure-data`, // URL del servicio de IA
           {
-            pdf_url: req.body.pdf_url || '',
-            question: req.body.question
+            pdf_url: req.body.pdf_url || '', // URL del PDF (opcional)
+            question: req.body.question // Pregunta para la IA
           },
           {
             headers: {
               'Content-Type': 'application/json',
-              'X-API-Key': apiKey
+              'X-API-Key': apiKey // Clave API para autenticación con el servicio de IA
             }
           }
         );
+        // Limpiar la cadena de respuesta de la IA (eliminar saltos de línea y barras invertidas)
         let responseString = response.data.replace(/\n/g, "");
         responseString = responseString.replace(/\\/g, "");
+        // Intentar reparar el JSON
         tareasJsonStr = jsonrepair(responseString);
-        jsonRepairSuccess = true;
+        jsonRepairSuccess = true; // Si la reparación es exitosa, salir del bucle
       } catch (err) {
         lastError = err;
         attempt++;
         if (attempt >= 2) {
-          console.error(err);
+          console.error('Error al reparar el JSON de la IA tras 2 intentos:', err);
           return res.status(500).json({ error: 'Error al reparar el JSON de la IA tras 2 intentos' });
         }
       }
     }
 
-    // tareasJsonStr is now a valid JSON string or object
+    // Parsear el JSON reparado
     let tareasJson;
     if (typeof tareasJsonStr === 'string') {
       tareasJson = JSON.parse(tareasJsonStr);
@@ -261,23 +290,21 @@ app.post('/tareas/ia/', requireLogin, async (req, res) => {
     }
 
     let results = [];
-    // Iterate over keys and group tarea/tiempoEstimado/horas pairs
-    // Example: { "tarea_1": "...", "tiempoEstimado_1": "...", "horasEstimadas_1": "...", ... }
     const tareas = [];
-    //console.log('tareasJson keys:', Object.keys(tareasJson));
+    // Iterar sobre las claves del objeto JSON de la IA para extraer las tareas
     for (const key of Object.keys(tareasJson)) {
       if (key.toLowerCase().startsWith('tarea')) {
-        // Extract index from key, e.g., tarea_1 -> 1
-        const idx = key.split('_')[1] || '';
+        const idx = key.split('_')[1] || ''; // Extraer el índice de la clave (ej. tarea_1 -> 1)
         const descripcion = tareasJson[key];
         const titulo = tareasJson[key];
-        // Find matching tiempoEstimado and horas keys
+        
+        // Buscar las claves de tiempo estimado y horas correspondientes
         const tiempoKey = `tiempoEstimado_${idx}`;
         const horasKey = `horasEstimadas_${idx}`;
         const tiempoEstimado = tareasJson[tiempoKey] || null;
         let horas = tareasJson[horasKey];
-        //console.log(`idx: ${idx}, horasKey: ${horasKey}, horas value:`, horas);
-        // If horas is not a valid integer, default to 3
+        
+        // Validar y convertir 'horas' a un entero, o asignar un valor por defecto (3)
         if (typeof horas === 'string') {
           const horasInt = parseInt(horas, 10);
           if (isNaN(horasInt)) {
@@ -291,18 +318,19 @@ app.post('/tareas/ia/', requireLogin, async (req, res) => {
         tareas.push({ descripcion, titulo, tiempoEstimado, horas });
       }
     }
-    // If no key starts with 'tarea', return error
+    // Si la respuesta de la IA no contiene ninguna tarea, retornar un error
     if (tareas.length === 0) {
       return res.status(400).json({ error: 'La respuesta de la IA no contiene ninguna tarea.' });
     }
 
+    // Procesar cada tarea y guardarla en la base de datos
     for (const tareaObj of tareas) {
       const { descripcion, titulo, tiempoEstimado, horas } = tareaObj;
       // Calcular fechaInicio y fechaFin según tiempoEstimado
       let fechaInicio, fechaFin;
       const hoy = new Date();
       fechaInicio = hoy.toISOString().slice(0, 10); // formato YYYY-MM-DD
-      let dias = 1;
+      let dias = 1; // Por defecto, 1 día
       if (typeof tiempoEstimado === 'string') {
         const match = tiempoEstimado.match(/(\d+)\s*d[ií]as?/i);
         if (match) {
@@ -318,20 +346,31 @@ app.post('/tareas/ia/', requireLogin, async (req, res) => {
         const insertResult = await query(sql, [fechaInicio, fechaFin, descripcion, titulo, req.session.user?.id || null, tiempoEstimado, horas]);
         results.push({ tarea: descripcion, tiempoEstimado, horas, insertId: insertResult.insertId });
       } catch (err) {
+        console.error('Error al insertar tarea generada por IA:', err);
         results.push({ tarea: descripcion, tiempoEstimado, horas, error: err.message });
       }
     }
-    // If no tasks were processed, send an error
+    // Si no se procesó ninguna tarea, enviar un error
     if (results.length === 0) {
-      return res.status(404).json({ error: 'No task was found.' });
+      return res.status(404).json({ error: 'No se encontró ninguna tarea para procesar.' });
     }
-    res.json({ tareasProcesadas: results }); //response
+    res.json({ tareasProcesadas: results }); // Enviar las tareas procesadas como respuesta
   } catch (error) {
-    console.error('Error en /tareas/ia/:id:', error.response?.data || error.message || error);
-    res.status(500).json({ error: 'Error al procesar la solicitud' });
+    console.error('Error general en /tareas/ia/:', error.response?.data || error.message || error);
+    res.status(500).json({ error: 'Error al procesar la solicitud de IA' });
   }
 });
 
-app.listen(hostAndPort, () => {
-  console.log(`Servidor corriendo en http://${hostAndPort}`);
+// Iniciar el servidor
+app.listen(PORT, HOST, () => {
+  console.log(`Servidor corriendo en http://${HOST}:${PORT}`);
+});
+
+// Manejo de errores del servidor (ej. puerto ya en uso)
+app.on('error', (error) => {
+  if (error.code === 'EADDRINUSE') {
+    console.error(`El puerto ${PORT} ya está en uso. Intenta con otro puerto o cierra la aplicación que lo está usando.`);
+  } else {
+    console.error('Error del servidor:', error);
+  }
 });
