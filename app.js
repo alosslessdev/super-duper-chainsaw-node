@@ -13,6 +13,7 @@ import https from 'https'; // Aunque importado, no se usa para HTTP estándar
 import fs from 'fs'; // Aunque importado, no se usa para HTTP estándar
 import cors from 'cors'; // Import CORS middleware
 
+
 // Obtener claves API y secretos de las variables de entorno
 const apiKey = process.env.IA_API_KEY || '';
 const secretKeyIdStore = process.env.AWS_S3_KEY_ID || '';
@@ -22,9 +23,13 @@ const app = express(); // Declaración de la aplicación Express
 
 // Determinar host y puerto basándose en NODE_ENV
 const isProd = process.env.NODE_ENV === 'production';
-const PORT = process.env.PORT || (isProd ? 8080 : 3000); // Puerto para escuchar
+const PORT = process.env.PORT || (isProd ? 80 : 3000); // Puerto para escuchar
 const HOST = isProd ? '0.0.0.0' : 'localhost'; // Host para escuchar (0.0.0.0 para producción escucha en todas las interfaces)
 const corsOrigin = isProd ? process.env.CORS_ORIGIN_PROD : 'http://localhost:3000'; // Define el origen de CORS basado en el entorno
+
+var privateKey  = fs.readFileSync('/home/ubuntu/privkey.pem', 'utf8');
+var certificate = fs.readFileSync('/home/ubuntu/fullchain.pem', 'utf8');
+var credentials = {key: privateKey, cert: certificate};
 
 // Configurar CORS
 app.use(cors({
@@ -197,7 +202,7 @@ app.get('/tareas/por/:id', requireLogin, async (req, res) => {
 
 // Crear una nueva tarea
 app.post('/tareas', requireLogin, async (req, res) => {
-  const { fecha_inicio, fecha_fin, descripcion, prioridad, titulo } = req.body;
+  const { fecha_inicio, fecha_fin, descripcion, prioridad, titulo, horas } = req.body;
   // Asignar siempre al usuario logueado
   const usuario = req.session.user?.id;
 
@@ -205,10 +210,11 @@ app.post('/tareas', requireLogin, async (req, res) => {
   const formattedFechaInicio = formatForMySQLDateTime(fecha_inicio);
   const formattedFechaFin = formatForMySQLDateTime(fecha_fin);
 
-  const sql = `INSERT INTO tarea (fecha_inicio, fecha_fin, descripcion, prioridad, titulo, usuario)
-               VALUES (?, ?, ?, ?, ?, ?)`;
+    const sql = `INSERT INTO tarea (fecha_inicio, fecha_fin, descripcion, prioridad, titulo, usuario, horas)
+               VALUES (?, ?, ?, ?, ?, ?, ?)`;
+
   try {
-    const resultados = await query(sql, [formattedFechaInicio, formattedFechaFin, descripcion, prioridad, titulo, usuario]);
+    const resultados = await query(sql, [formattedFechaInicio, formattedFechaFin, descripcion, prioridad, titulo, usuario, horas]);
     res.status(201).json({ pk: resultados.insertId, fecha_inicio: formattedFechaInicio, fecha_fin: formattedFechaFin, descripcion, prioridad, titulo, usuario });
   } catch (error) {
     console.error('Error al crear nueva tarea:', error);
@@ -293,7 +299,7 @@ app.post('/tareas/ia/', requireLogin, async (req, res) => {
     while (attempt < 2 && !jsonRepairSuccess) {
       try {
         response = await axios.post(
-          `http://0000243.xyz:8000/secure-data`, // URL del servicio de IA
+          `https://octopus-app-jjamd.ondigitalocean.app:8000/secure-data`, // URL del servicio de IA
           {
             pdf_url: pdfUrl, // URL del PDF (opcional)
             question: question // Pregunta para la IA
@@ -345,18 +351,15 @@ app.post('/tareas/ia/', requireLogin, async (req, res) => {
         let horas = tareasJson[horasKey];
 
         // Validar y convertir 'horas' a un entero, o asignar un valor por defecto (3)
-        // Si es un número (entero o decimal), redondear hacia arriba
         if (typeof horas === 'string') {
-          const horasFloat = parseFloat(horas); // Usar parseFloat para manejar decimales
-          if (isNaN(horasFloat)) {
+          const horasInt = parseInt(horas, 10);
+          if (isNaN(horasInt)) {
             horas = 3;
           } else {
-            horas = Math.ceil(horasFloat); // Redondear hacia arriba
+            horas = horasInt;
           }
-        } else if (typeof horas === 'number' && !isNaN(horas)) {
-          horas = Math.ceil(horas); // Redondear hacia arriba si ya es un número
-        } else {
-          horas = 3; // Valor por defecto si no es un número válido
+        } else if (typeof horas !== 'number' || isNaN(horas)) {
+          horas = 3;
         }
         tareas.push({ descripcion, titulo, tiempoEstimado, horas });
       }
@@ -406,8 +409,13 @@ app.post('/tareas/ia/', requireLogin, async (req, res) => {
 
 // Iniciar el servidor
 app.listen(PORT, HOST, () => {
-  console.log(`Servidor corriendo en http://${HOST}:${PORT}`);
+  console.log(`Servidor corriendo en https://${HOST}:${PORT}`);
 });
+
+var httpsServer = https.createServer(credentials, app);
+
+httpsServer.listen(443);
+
 
 // Manejo de errores del servidor (ej. puerto ya en uso)
 app.on('error', (error) => {

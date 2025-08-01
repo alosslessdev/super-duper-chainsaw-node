@@ -7,11 +7,11 @@
   },
   "servers": [
     {
-      "url": "http://localhost:8080",
+      "url": "https://localhost",
       "description": "Servidor de desarrollo local"
     },
     {
-      "url": "http://0000243.xyz:8080",
+      "url": "https://octopus-app-jjamd.ondigitalocean.app",
       "description": "Servidor de producción"
     }
   ],
