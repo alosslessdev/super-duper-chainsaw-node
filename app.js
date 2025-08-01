@@ -1,5 +1,5 @@
 // Load environment variables from .env file
-import 'dotenv/config'; 
+import 'dotenv/config';
 import axios from 'axios';
 import express from 'express';
 import session from 'express-session';
@@ -10,7 +10,7 @@ import conexion from './db.js'; // Importa la conexión a la base de datos
 import swaggerUi from 'swagger-ui-express';
 import swaggerDocument from './swagger.json' with { type: "json" };
 import https from 'https'; // Aunque importado, no se usa para HTTP estándar
-import fs  from 'fs'; // Aunque importado, no se usa para HTTP estándar
+import fs from 'fs'; // Aunque importado, no se usa para HTTP estándar
 import cors from 'cors'; // Import CORS middleware
 
 // Obtener claves API y secretos de las variables de entorno
@@ -33,9 +33,9 @@ app.use(cors({
 }));
 
 // Usar swagger para documentación de la API
-app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerDocument)); 
+app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerDocument));
 // Middleware para parsear JSON en el cuerpo de las solicitudes
-app.use(express.json()); 
+app.use(express.json());
 
 const hasher = hash(); // Inicializar el hasher de contraseñas
 
@@ -56,6 +56,23 @@ function requireLogin(req, res, next) {
 
 // Promisificar la query a la conexión de base de datos para usar async/await
 const query = util.promisify(conexion.query).bind(conexion);
+
+// Utility function to format date for MySQL DATETIME
+function formatForMySQLDateTime(date) {
+  if (!date) return null;
+  const d = new Date(date);
+  // Check if the date is valid
+  if (isNaN(d.getTime())) {
+    return null; // Return null for invalid dates
+  }
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  const hours = String(d.getHours()).padStart(2, '0');
+  const minutes = String(d.getMinutes()).padStart(2, '0');
+  const seconds = String(d.getSeconds()).padStart(2, '0');
+  return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
+}
 
 // Crear usuario / agregado lo de hash
 app.post('/usuarios', (req, res) => {
@@ -183,15 +200,16 @@ app.post('/tareas', requireLogin, async (req, res) => {
   const { fecha_inicio, fecha_fin, descripcion, prioridad, titulo } = req.body;
   // Asignar siempre al usuario logueado
   const usuario = req.session.user?.id;
-/*   if (!usuario) {
-    return res.status(401).json({ error: 'Usuario no autenticado para crear tarea.' });
-  } */
+
+  // Format dates to MySQL DATETIME format
+  const formattedFechaInicio = formatForMySQLDateTime(fecha_inicio);
+  const formattedFechaFin = formatForMySQLDateTime(fecha_fin);
 
   const sql = `INSERT INTO tarea (fecha_inicio, fecha_fin, descripcion, prioridad, titulo, usuario)
                VALUES (?, ?, ?, ?, ?, ?)`;
   try {
-    const resultados = await query(sql, [fecha_inicio, fecha_fin, descripcion, prioridad, titulo, usuario]);
-    res.status(201).json({ pk: resultados.insertId, fecha_inicio, fecha_fin, descripcion, prioridad, titulo, usuario });
+    const resultados = await query(sql, [formattedFechaInicio, formattedFechaFin, descripcion, prioridad, titulo, usuario]);
+    res.status(201).json({ pk: resultados.insertId, fecha_inicio: formattedFechaInicio, fecha_fin: formattedFechaFin, descripcion, prioridad, titulo, usuario });
   } catch (error) {
     console.error('Error al crear nueva tarea:', error);
     res.status(500).json({ error: error.message });
@@ -201,7 +219,7 @@ app.post('/tareas', requireLogin, async (req, res) => {
 // Actualizar tarea
 app.put('/tareas/:id', requireLogin, async (req, res) => {
   const id = req.params.id;
-  const { fecha_inicio, fecha_fin, descripcion, prioridad, titulo } = req.body; 
+  const { fecha_inicio, fecha_fin, descripcion, prioridad, titulo } = req.body;
 
   try {
     const resultados = await query('SELECT * FROM tarea WHERE pk = ?', [id]);
@@ -211,10 +229,14 @@ app.put('/tareas/:id', requireLogin, async (req, res) => {
     }
     const usuario = req.session.user.id; // Obtener el ID del usuario de la sesión
 
+    // Format dates to MySQL DATETIME format
+    const formattedFechaInicio = formatForMySQLDateTime(fecha_inicio);
+    const formattedFechaFin = formatForMySQLDateTime(fecha_fin);
+
     const sql = `UPDATE tarea SET fecha_inicio = ?, fecha_fin = ?, descripcion = ?, prioridad = ?, titulo = ?, usuario = ?
                WHERE pk = ?`;
-  
-    const updateResult = await query(sql, [fecha_inicio, fecha_fin, descripcion, prioridad, titulo, usuario, id]);
+
+    const updateResult = await query(sql, [formattedFechaInicio, formattedFechaFin, descripcion, prioridad, titulo, usuario, id]);
     if (updateResult.affectedRows === 0) return res.status(404).json({ error: 'Tarea no encontrada o no se realizaron cambios' });
     res.json({ mensaje: 'Tarea actualizada' });
   } catch (error) {
@@ -243,20 +265,38 @@ app.delete('/tareas/:id', requireLogin, async (req, res) => {
 });
 
 // RUTA IA CON TAREA POR ID
+
 app.post('/tareas/ia/', requireLogin, async (req, res) => {
   try {
     let response, tareasJsonStr;
     let attempt = 0;
     let jsonRepairSuccess = false;
     let lastError;
+
+    // Process pdf_url and question from the request body
+    let pdfUrl = req.body.pdf_url;
+    let question = req.body.question;
+
+    // Trim leading/trailing spaces and consider empty if only spaces
+    if (typeof pdfUrl === 'string') {
+      pdfUrl = pdfUrl.trim();
+      if (pdfUrl === '') pdfUrl = '';
+    }
+    if (typeof question === 'string') {
+      question = question.trim();
+      if (question === '') question = 'Por favor extrae todos los pasos que debo hacer para completar lo que se plantea en este documento. Si hay una lista de puntos a hacer, muestra la lista.';
+    } else { //if the if expression is false
+      question = 'Por favor extrae todos los pasos que debo hacer para completar lo que se plantea en este documento. Si hay una lista de puntos a hacer, muestra la lista.';
+    }
+
     // Intentar hasta 2 veces para obtener y reparar la respuesta JSON de la IA
     while (attempt < 2 && !jsonRepairSuccess) {
       try {
         response = await axios.post(
           `http://0000243.xyz:8000/secure-data`, // URL del servicio de IA
           {
-            pdf_url: req.body.pdf_url || '', // URL del PDF (opcional)
-            question: req.body.question // Pregunta para la IA
+            pdf_url: pdfUrl, // URL del PDF (opcional)
+            question: question // Pregunta para la IA
           },
           {
             headers: {
@@ -297,23 +337,26 @@ app.post('/tareas/ia/', requireLogin, async (req, res) => {
         const idx = key.split('_')[1] || ''; // Extraer el índice de la clave (ej. tarea_1 -> 1)
         const descripcion = tareasJson[key];
         const titulo = tareasJson[key];
-        
+
         // Buscar las claves de tiempo estimado y horas correspondientes
         const tiempoKey = `tiempoEstimado_${idx}`;
         const horasKey = `horasEstimadas_${idx}`;
         const tiempoEstimado = tareasJson[tiempoKey] || null;
         let horas = tareasJson[horasKey];
-        
+
         // Validar y convertir 'horas' a un entero, o asignar un valor por defecto (3)
+        // Si es un número (entero o decimal), redondear hacia arriba
         if (typeof horas === 'string') {
-          const horasInt = parseInt(horas, 10);
-          if (isNaN(horasInt)) {
+          const horasFloat = parseFloat(horas); // Usar parseFloat para manejar decimales
+          if (isNaN(horasFloat)) {
             horas = 3;
           } else {
-            horas = horasInt;
+            horas = Math.ceil(horasFloat); // Redondear hacia arriba
           }
-        } else if (typeof horas !== 'number' || isNaN(horas)) {
-          horas = 3;
+        } else if (typeof horas === 'number' && !isNaN(horas)) {
+          horas = Math.ceil(horas); // Redondear hacia arriba si ya es un número
+        } else {
+          horas = 3; // Valor por defecto si no es un número válido
         }
         tareas.push({ descripcion, titulo, tiempoEstimado, horas });
       }
@@ -327,9 +370,7 @@ app.post('/tareas/ia/', requireLogin, async (req, res) => {
     for (const tareaObj of tareas) {
       const { descripcion, titulo, tiempoEstimado, horas } = tareaObj;
       // Calcular fechaInicio y fechaFin según tiempoEstimado
-      let fechaInicio, fechaFin;
       const hoy = new Date();
-      fechaInicio = hoy.toISOString().slice(0, 10); // formato YYYY-MM-DD
       let dias = 1; // Por defecto, 1 día
       if (typeof tiempoEstimado === 'string') {
         const match = tiempoEstimado.match(/(\d+)\s*d[ií]as?/i);
@@ -339,7 +380,9 @@ app.post('/tareas/ia/', requireLogin, async (req, res) => {
       }
       const fin = new Date(hoy);
       fin.setDate(hoy.getDate() + dias);
-      fechaFin = fin.toISOString().slice(0, 10);
+
+      const fechaInicio = formatForMySQLDateTime(hoy);
+      const fechaFin = formatForMySQLDateTime(fin);
 
       const sql = `INSERT INTO tarea (fecha_inicio, fecha_fin, descripcion, titulo, usuario, tiempo_estimado, horas) VALUES (?, ?, ?, ?, ?, ?, ?)`;
       try {

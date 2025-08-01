@@ -1,65 +1,298 @@
 {
   "openapi": "3.0.0",
   "info": {
-    "title": "API de Gestión de Tareas y Usuarios",
+    "title": "API de Gestión de Tareas",
     "version": "1.0.0",
-    "description": "Una API para gestionar usuarios y tareas, con funcionalidad de generación de tareas asistida por IA."
+    "description": "API para la gestión de usuarios y tareas, incluyendo funcionalidades de autenticación y procesamiento de tareas con IA."
   },
   "servers": [
     {
-      "url": "http://localhost:3000",
-      "description": "Servidor de desarrollo"
+      "url": "http://localhost:8080",
+      "description": "Servidor de desarrollo local"
     },
     {
-      "url": "http://0.0.0.0:8080",
+      "url": "http://0000243.xyz:8080",
       "description": "Servidor de producción"
     }
   ],
   "tags": [
     {
-      "name": "Usuarios",
-      "description": "Operaciones relacionadas con la gestión de usuarios y autenticación."
+      "name": "Autenticación",
+      "description": "Operaciones relacionadas con el registro, inicio y cierre de sesión de usuarios."
     },
     {
       "name": "Tareas",
-      "description": "Operaciones relacionadas con la gestión de tareas."
+      "description": "Operaciones para la creación, lectura, actualización y eliminación de tareas."
     },
     {
       "name": "Inteligencia Artificial",
-      "description": "Operaciones para generar tareas usando IA."
+      "description": "Operaciones relacionadas con la generación de tareas a través de IA."
     }
   ],
+  "components": {
+    "securitySchemes": {
+      "cookieAuth": {
+        "type": "apiKey",
+        "in": "cookie",
+        "name": "connect.sid",
+        "description": "Autenticación basada en sesión a través de cookies."
+      }
+    },
+    "schemas": {
+      "Usuario": {
+        "type": "object",
+        "properties": {
+          "pk": {
+            "type": "integer",
+            "description": "ID único del usuario."
+          },
+          "email": {
+            "type": "string",
+            "format": "email",
+            "description": "Correo electrónico del usuario."
+          }
+        },
+        "required": [
+          "email"
+        ]
+      },
+      "NuevaTarea": {
+        "type": "object",
+        "properties": {
+          "fecha_inicio": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true,
+            "description": "Fecha y hora de inicio de la tarea (formato ISO 8601)."
+          },
+          "fecha_fin": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true,
+            "description": "Fecha y hora de fin de la tarea (formato ISO 8601)."
+          },
+          "descripcion": {
+            "type": "string",
+            "description": "Descripción detallada de la tarea."
+          },
+          "prioridad": {
+            "type": "integer",
+            "nullable": true,
+            "description": "Nivel de prioridad de la tarea."
+          },
+          "titulo": {
+            "type": "string",
+            "description": "Título de la tarea."
+          }
+        },
+        "required": [
+          "descripcion",
+          "titulo"
+        ]
+      },
+      "Tarea": {
+        "type": "object",
+        "properties": {
+          "pk": {
+            "type": "integer",
+            "description": "ID único de la tarea."
+          },
+          "fecha_inicio": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true,
+            "description": "Fecha y hora de inicio de la tarea."
+          },
+          "fecha_fin": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true,
+            "description": "Fecha y hora de fin de la tarea."
+          },
+          "descripcion": {
+            "type": "string",
+            "description": "Descripción detallada de la tarea."
+          },
+          "prioridad": {
+            "type": "integer",
+            "nullable": true,
+            "description": "Nivel de prioridad de la tarea."
+          },
+          "titulo": {
+            "type": "string",
+            "description": "Título de la tarea."
+          },
+          "usuario": {
+            "type": "integer",
+            "description": "ID del usuario al que pertenece la tarea."
+          },
+          "tiempo_estimado": {
+            "type": "string",
+            "nullable": true,
+            "description": "Tiempo estimado para completar la tarea (ej. '3 días')."
+          },
+          "horas": {
+            "type": "integer",
+            "nullable": true,
+            "description": "Horas estimadas para completar la tarea."
+          }
+        },
+        "required": [
+          "pk",
+          "descripcion",
+          "titulo",
+          "usuario"
+        ]
+      },
+      "Error": {
+        "type": "object",
+        "properties": {
+          "error": {
+            "type": "string",
+            "description": "Mensaje de error."
+          }
+        }
+      },
+      "LoginResponse": {
+        "type": "object",
+        "properties": {
+          "mensaje": {
+            "type": "string",
+            "example": "Inicio de sesión exitoso"
+          },
+          "usuario": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "integer"
+              },
+              "email": {
+                "type": "string"
+              }
+            }
+          },
+          "secretKeyId": {
+            "type": "string",
+            "description": "ID de la clave secreta de AWS S3."
+          },
+          "secretKey": {
+            "type": "string",
+            "description": "Clave secreta de AWS S3."
+          }
+        }
+      },
+      "LogoutResponse": {
+        "type": "object",
+        "properties": {
+          "mensaje": {
+            "type": "string",
+            "example": "Sesión cerrada"
+          }
+        }
+      },
+      "IATaskRequest": {
+        "type": "object",
+        "properties": {
+          "pdf_url": {
+            "type": "string",
+            "nullable": true,
+            "description": "URL de un documento PDF para que la IA lo analice.",
+            "example": "https://example.com/document.pdf"
+          },
+          "question": {
+            "type": "string",
+            "nullable": true,
+            "description": "Pregunta específica para la IA sobre el contenido del PDF o para generar tareas. Si está vacío, se usará una pregunta por defecto.",
+            "example": "Extrae los pasos para completar este proyecto."
+          }
+        }
+      },
+      "IATaskResult": {
+        "type": "object",
+        "properties": {
+          "tarea": {
+            "type": "string",
+            "description": "Descripción de la tarea generada."
+          },
+          "tiempoEstimado": {
+            "type": "string",
+            "nullable": true,
+            "description": "Tiempo estimado de la tarea, si fue proporcionado por la IA."
+          },
+          "horas": {
+            "type": "integer",
+            "description": "Horas estimadas para la tarea."
+          },
+          "insertId": {
+            "type": "integer",
+            "nullable": true,
+            "description": "ID de la tarea insertada en la base de datos."
+          },
+          "error": {
+            "type": "string",
+            "nullable": true,
+            "description": "Mensaje de error si la tarea no pudo ser insertada."
+          }
+        }
+      },
+      "IATasksResponse": {
+        "type": "object",
+        "properties": {
+          "tareasProcesadas": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/IATaskResult"
+            }
+          }
+        }
+      }
+    }
+  },
   "paths": {
     "/usuarios": {
       "post": {
-        "tags": ["Usuarios"],
         "summary": "Crear un nuevo usuario",
+        "tags": [
+          "Autenticación"
+        ],
         "requestBody": {
           "required": true,
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/UsuarioCreacion"
+                "type": "object",
+                "properties": {
+                  "email": {
+                    "type": "string",
+                    "format": "email",
+                    "description": "Correo electrónico del nuevo usuario."
+                  },
+                  "password": {
+                    "type": "string",
+                    "description": "Contraseña del nuevo usuario."
+                  }
+                },
+                "required": [
+                  "email",
+                  "password"
+                ]
               }
             }
           }
         },
         "responses": {
           "201": {
-            "description": "Usuario creado exitosamente",
+            "description": "Usuario creado exitosamente.",
             "content": {
               "application/json": {
                 "schema": {
                   "type": "object",
                   "properties": {
                     "pk": {
-                      "type": "integer",
-                      "description": "ID del usuario creado"
+                      "type": "integer"
                     },
                     "email": {
-                      "type": "string",
-                      "format": "email",
-                      "description": "Email del usuario creado"
+                      "type": "string"
                     }
                   }
                 }
@@ -67,7 +300,7 @@
             }
           },
           "400": {
-            "description": "Email y contraseña son requeridos",
+            "description": "Email y contraseña son requeridos.",
             "content": {
               "application/json": {
                 "schema": {
@@ -77,7 +310,7 @@
             }
           },
           "500": {
-            "description": "Error al hashear la contraseña o al insertar usuario en la BD",
+            "description": "Error al hashear la contraseña o al insertar el usuario en la base de datos.",
             "content": {
               "application/json": {
                 "schema": {
@@ -91,21 +324,38 @@
     },
     "/login": {
       "post": {
-        "tags": ["Usuarios"],
         "summary": "Iniciar sesión de usuario",
+        "tags": [
+          "Autenticación"
+        ],
         "requestBody": {
           "required": true,
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/LoginRequest"
+                "type": "object",
+                "properties": {
+                  "email": {
+                    "type": "string",
+                    "format": "email",
+                    "description": "Correo electrónico del usuario."
+                  },
+                  "password": {
+                    "type": "string",
+                    "description": "Contraseña del usuario."
+                  }
+                },
+                "required": [
+                  "email",
+                  "password"
+                ]
               }
             }
           }
         },
         "responses": {
           "200": {
-            "description": "Inicio de sesión exitoso",
+            "description": "Inicio de sesión exitoso.",
             "content": {
               "application/json": {
                 "schema": {
@@ -115,7 +365,7 @@
             }
           },
           "400": {
-            "description": "Email y contraseña requeridos",
+            "description": "Email y contraseña requeridos.",
             "content": {
               "application/json": {
                 "schema": {
@@ -125,7 +375,7 @@
             }
           },
           "401": {
-            "description": "Usuario no encontrado o contraseña incorrecta",
+            "description": "Usuario no encontrado o contraseña incorrecta.",
             "content": {
               "application/json": {
                 "schema": {
@@ -135,7 +385,7 @@
             }
           },
           "500": {
-            "description": "Error al verificar contraseña o al guardar la sesión",
+            "description": "Error al verificar contraseña o al guardar la sesión.",
             "content": {
               "application/json": {
                 "schema": {
@@ -149,8 +399,10 @@
     },
     "/logout": {
       "post": {
-        "tags": ["Usuarios"],
         "summary": "Cerrar sesión de usuario",
+        "tags": [
+          "Autenticación"
+        ],
         "security": [
           {
             "cookieAuth": []
@@ -158,17 +410,11 @@
         ],
         "responses": {
           "200": {
-            "description": "Sesión cerrada exitosamente",
+            "description": "Sesión cerrada exitosamente.",
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "mensaje": {
-                      "type": "string",
-                      "example": "Sesión cerrada"
-                    }
-                  }
+                  "$ref": "#/components/schemas/LogoutResponse"
                 }
               }
             }
@@ -188,27 +434,29 @@
     },
     "/tareas/de/{usuario}": {
       "get": {
-        "tags": ["Tareas"],
-        "summary": "Obtener todas las tareas de un usuario",
-        "parameters": [
-          {
-            "name": "usuario",
-            "in": "path",
-            "required": true,
-            "description": "ID del usuario",
-            "schema": {
-              "type": "integer"
-            }
-          }
+        "summary": "Obtener todas las tareas de un usuario específico",
+        "tags": [
+          "Tareas"
         ],
         "security": [
           {
             "cookieAuth": []
           }
         ],
+        "parameters": [
+          {
+            "name": "usuario",
+            "in": "path",
+            "required": true,
+            "description": "ID del usuario cuyas tareas se desean obtener.",
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
         "responses": {
           "200": {
-            "description": "Lista de tareas del usuario",
+            "description": "Lista de tareas del usuario.",
             "content": {
               "application/json": {
                 "schema": {
@@ -241,7 +489,7 @@
             }
           },
           "500": {
-            "description": "Error al obtener tareas por usuario",
+            "description": "Error al obtener tareas por usuario.",
             "content": {
               "application/json": {
                 "schema": {
@@ -255,27 +503,29 @@
     },
     "/tareas/por/{id}": {
       "get": {
-        "tags": ["Tareas"],
-        "summary": "Obtener tarea por ID",
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "required": true,
-            "description": "ID de la tarea",
-            "schema": {
-              "type": "integer"
-            }
-          }
+        "summary": "Obtener una tarea por su ID",
+        "tags": [
+          "Tareas"
         ],
         "security": [
           {
             "cookieAuth": []
           }
         ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "ID de la tarea a obtener.",
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
         "responses": {
           "200": {
-            "description": "Detalles de la tarea",
+            "description": "Detalles de la tarea.",
             "content": {
               "application/json": {
                 "schema": {
@@ -305,7 +555,7 @@
             }
           },
           "404": {
-            "description": "Tarea no encontrada",
+            "description": "Tarea no encontrada.",
             "content": {
               "application/json": {
                 "schema": {
@@ -315,7 +565,7 @@
             }
           },
           "500": {
-            "description": "Error al obtener tarea por ID",
+            "description": "Error al obtener tarea por ID.",
             "content": {
               "application/json": {
                 "schema": {
@@ -329,8 +579,10 @@
     },
     "/tareas": {
       "post": {
-        "tags": ["Tareas"],
         "summary": "Crear una nueva tarea",
+        "tags": [
+          "Tareas"
+        ],
         "security": [
           {
             "cookieAuth": []
@@ -341,14 +593,14 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/TareaCreacion"
+                "$ref": "#/components/schemas/NuevaTarea"
               }
             }
           }
         },
         "responses": {
           "201": {
-            "description": "Tarea creada exitosamente",
+            "description": "Tarea creada exitosamente.",
             "content": {
               "application/json": {
                 "schema": {
@@ -368,7 +620,7 @@
             }
           },
           "500": {
-            "description": "Error al crear nueva tarea",
+            "description": "Error al crear nueva tarea.",
             "content": {
               "application/json": {
                 "schema": {
@@ -382,22 +634,24 @@
     },
     "/tareas/{id}": {
       "put": {
-        "tags": ["Tareas"],
         "summary": "Actualizar una tarea existente",
+        "tags": [
+          "Tareas"
+        ],
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
         "parameters": [
           {
             "name": "id",
             "in": "path",
             "required": true,
-            "description": "ID de la tarea a actualizar",
+            "description": "ID de la tarea a actualizar.",
             "schema": {
               "type": "integer"
             }
-          }
-        ],
-        "security": [
-          {
-            "cookieAuth": []
           }
         ],
         "requestBody": {
@@ -405,14 +659,14 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/TareaActualizacion"
+                "$ref": "#/components/schemas/NuevaTarea"
               }
             }
           }
         },
         "responses": {
           "200": {
-            "description": "Tarea actualizada exitosamente",
+            "description": "Tarea actualizada exitosamente.",
             "content": {
               "application/json": {
                 "schema": {
@@ -448,7 +702,7 @@
             }
           },
           "404": {
-            "description": "Tarea no encontrada o no se realizaron cambios",
+            "description": "Tarea no encontrada o no se realizaron cambios.",
             "content": {
               "application/json": {
                 "schema": {
@@ -458,7 +712,7 @@
             }
           },
           "500": {
-            "description": "Error al actualizar tarea",
+            "description": "Error al actualizar tarea.",
             "content": {
               "application/json": {
                 "schema": {
@@ -470,27 +724,29 @@
         }
       },
       "delete": {
-        "tags": ["Tareas"],
         "summary": "Eliminar una tarea",
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "required": true,
-            "description": "ID de la tarea a eliminar",
-            "schema": {
-              "type": "integer"
-            }
-          }
+        "tags": [
+          "Tareas"
         ],
         "security": [
           {
             "cookieAuth": []
           }
         ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "ID de la tarea a eliminar.",
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
         "responses": {
           "200": {
-            "description": "Tarea eliminada exitosamente",
+            "description": "Tarea eliminada exitosamente.",
             "content": {
               "application/json": {
                 "schema": {
@@ -526,7 +782,7 @@
             }
           },
           "404": {
-            "description": "Tarea no encontrada",
+            "description": "Tarea no encontrada.",
             "content": {
               "application/json": {
                 "schema": {
@@ -536,7 +792,7 @@
             }
           },
           "500": {
-            "description": "Error al eliminar tarea",
+            "description": "Error al eliminar tarea.",
             "content": {
               "application/json": {
                 "schema": {
@@ -550,9 +806,10 @@
     },
     "/tareas/ia": {
       "post": {
-        "tags": ["Inteligencia Artificial"],
-        "summary": "Generar tareas usando IA",
-        "description": "Envía una pregunta o URL de PDF a un servicio de IA para generar tareas automáticamente.",
+        "summary": "Generar tareas utilizando Inteligencia Artificial",
+        "tags": [
+          "Inteligencia Artificial"
+        ],
         "security": [
           {
             "cookieAuth": []
@@ -563,18 +820,18 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/TareaAIRequest"
+                "$ref": "#/components/schemas/IATaskRequest"
               }
             }
           }
         },
         "responses": {
           "200": {
-            "description": "Tareas procesadas y guardadas exitosamente",
+            "description": "Tareas procesadas y generadas exitosamente por la IA.",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/TareaAIResponse"
+                  "$ref": "#/components/schemas/IATasksResponse"
                 }
               }
             }
@@ -618,273 +875,6 @@
                 }
               }
             }
-          }
-        }
-      }
-    }
-  },
-  "components": {
-    "securitySchemes": {
-      "cookieAuth": {
-        "type": "apiKey",
-        "in": "cookie",
-        "name": "connect.sid",
-        "description": "Autenticación basada en cookies de sesión. Se requiere haber iniciado sesión previamente."
-      }
-    },
-    "schemas": {
-      "Usuario": {
-        "type": "object",
-        "properties": {
-          "pk": {
-            "type": "integer",
-            "description": "ID único del usuario",
-            "readOnly": true
-          },
-          "email": {
-            "type": "string",
-            "format": "email",
-            "description": "Email del usuario"
-          }
-        },
-        "required": ["email"]
-      },
-      "UsuarioCreacion": {
-        "type": "object",
-        "properties": {
-          "email": {
-            "type": "string",
-            "format": "email",
-            "description": "Email del usuario"
-          },
-          "password": {
-            "type": "string",
-            "format": "password",
-            "description": "Contraseña del usuario"
-          }
-        },
-        "required": ["email", "password"]
-      },
-      "LoginRequest": {
-        "type": "object",
-        "properties": {
-          "email": {
-            "type": "string",
-            "format": "email",
-            "description": "Email del usuario"
-          },
-          "password": {
-            "type": "string",
-            "format": "password",
-            "description": "Contraseña del usuario"
-          }
-        },
-        "required": ["email", "password"]
-      },
-      "LoginResponse": {
-        "type": "object",
-        "properties": {
-          "mensaje": {
-            "type": "string",
-            "example": "Inicio de sesión exitoso"
-          },
-          "usuario": {
-            "type": "object",
-            "properties": {
-              "id": {
-                "type": "integer",
-                "description": "ID del usuario"
-              },
-              "email": {
-                "type": "string",
-                "format": "email",
-                "description": "Email del usuario"
-              }
-            }
-          },
-          "secretKeyId": {
-            "type": "string",
-            "description": "ID de la clave secreta (AWS S3 Key ID)"
-          },
-          "secretKey": {
-            "type": "string",
-            "description": "Clave secreta (AWS S3 Secret Key)"
-          }
-        }
-      },
-      "Tarea": {
-        "type": "object",
-        "properties": {
-          "pk": {
-            "type": "integer",
-            "description": "ID único de la tarea",
-            "readOnly": true
-          },
-          "fecha_inicio": {
-            "type": "string",
-            "format": "date",
-            "description": "Fecha de inicio de la tarea (YYYY-MM-DD)"
-          },
-          "fecha_fin": {
-            "type": "string",
-            "format": "date",
-            "description": "Fecha de fin de la tarea (YYYY-MM-DD)"
-          },
-          "descripcion": {
-            "type": "string",
-            "description": "Descripción detallada de la tarea"
-          },
-          "prioridad": {
-            "type": "string",
-            "description": "Nivel de prioridad de la tarea (ej. 'Alta', 'Media', 'Baja')"
-          },
-          "titulo": {
-            "type": "string",
-            "description": "Título breve de la tarea"
-          },
-          "usuario": {
-            "type": "integer",
-            "description": "ID del usuario al que pertenece la tarea"
-          },
-          "tiempo_estimado": {
-            "type": "string",
-            "nullable": true,
-            "description": "Tiempo estimado para completar la tarea (ej. '2 días', '3 horas')"
-          },
-          "horas": {
-            "type": "integer",
-            "nullable": true,
-            "description": "Horas estimadas para la tarea"
-          }
-        },
-        "required": ["fecha_inicio", "fecha_fin", "descripcion", "prioridad", "titulo", "usuario"]
-      },
-      "TareaCreacion": {
-        "type": "object",
-        "properties": {
-          "fecha_inicio": {
-            "type": "string",
-            "format": "date",
-            "description": "Fecha de inicio de la tarea (YYYY-MM-DD)",
-            "example": "2024-07-29"
-          },
-          "fecha_fin": {
-            "type": "string",
-            "format": "date",
-            "description": "Fecha de fin de la tarea (YYYY-MM-DD)",
-            "example": "2024-07-30"
-          },
-          "descripcion": {
-            "type": "string",
-            "description": "Descripción detallada de la tarea",
-            "example": "Preparar informe mensual de ventas."
-          },
-          "prioridad": {
-            "type": "string",
-            "description": "Nivel de prioridad de la tarea (ej. 'Alta', 'Media', 'Baja')",
-            "example": "Alta"
-          },
-          "titulo": {
-            "type": "string",
-            "description": "Título breve de la tarea",
-            "example": "Informe de Ventas"
-          }
-        },
-        "required": ["fecha_inicio", "fecha_fin", "descripcion", "prioridad", "titulo"]
-      },
-      "TareaActualizacion": {
-        "type": "object",
-        "properties": {
-          "fecha_inicio": {
-            "type": "string",
-            "format": "date",
-            "description": "Fecha de inicio de la tarea (YYYY-MM-DD)",
-            "example": "2024-07-29"
-          },
-          "fecha_fin": {
-            "type": "string",
-            "format": "date",
-            "description": "Fecha de fin de la tarea (YYYY-MM-DD)",
-            "example": "2024-07-30"
-          },
-          "descripcion": {
-            "type": "string",
-            "description": "Descripción detallada de la tarea",
-            "example": "Preparar informe mensual de ventas actualizado."
-          },
-          "prioridad": {
-            "type": "string",
-            "description": "Nivel de prioridad de la tarea (ej. 'Alta', 'Media', 'Baja')",
-            "example": "Media"
-          },
-          "titulo": {
-            "type": "string",
-            "description": "Título breve de la tarea",
-            "example": "Informe de Ventas Actualizado"
-          }
-        }
-      },
-      "TareaAIRequest": {
-        "type": "object",
-        "properties": {
-          "pdf_url": {
-            "type": "string",
-            "format": "url",
-            "nullable": true,
-            "description": "URL de un documento PDF para que la IA lo analice (opcional)",
-            "example": "https://example.com/documento.pdf"
-          },
-          "question": {
-            "type": "string",
-            "description": "Pregunta o instrucción para la IA para generar tareas",
-            "example": "¿Qué tareas necesito hacer para organizar una fiesta de cumpleaños para 10 personas?"
-          }
-        },
-        "required": ["question"]
-      },
-      "TareaAIResponse": {
-        "type": "object",
-        "properties": {
-          "tareasProcesadas": {
-            "type": "array",
-            "items": {
-              "type": "object",
-              "properties": {
-                "tarea": {
-                  "type": "string",
-                  "description": "Descripción de la tarea generada"
-                },
-                "tiempoEstimado": {
-                  "type": "string",
-                  "nullable": true,
-                  "description": "Tiempo estimado por la IA para la tarea"
-                },
-                "horas": {
-                  "type": "integer",
-                  "nullable": true,
-                  "description": "Horas estimadas para la tarea"
-                },
-                "insertId": {
-                  "type": "integer",
-                  "nullable": true,
-                  "description": "ID de la tarea insertada en la base de datos (si fue exitosa)"
-                },
-                "error": {
-                  "type": "string",
-                  "nullable": true,
-                  "description": "Mensaje de error si la tarea no pudo ser insertada"
-                }
-              }
-            }
-          }
-        }
-      },
-      "Error": {
-        "type": "object",
-        "properties": {
-          "error": {
-            "type": "string",
-            "description": "Mensaje de error"
           }
         }
       }
